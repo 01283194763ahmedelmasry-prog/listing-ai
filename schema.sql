@@ -27,4 +27,10 @@ begin
 end $$;
 create or replace function refund_try(uid uuid) returns void language sql security definer as $$
   update profiles set free_used = greatest(0, free_used - 1) where id = uid $$;
-revoke execute on function consume_try, refund_try from anon, authenticated;
+revoke execute on function consume_try, refund_try from public, anon, authenticated;
+
+-- API access is not auto-granted on this project: grant explicitly.
+grant usage on schema public to service_role, authenticated;
+grant all on profiles to service_role;
+grant select on profiles to authenticated;
+grant execute on function consume_try(uuid, int), refund_try(uuid) to service_role;
