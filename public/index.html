@@ -1,0 +1,53 @@
+<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>محسّن قوائم المنتجات</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>body{font-family:system-ui,sans-serif;background:#f8fafc;margin:0;color:#0f172a}main{max-width:640px;margin:auto;padding:24px}
+h1 span{color:#0d9488}input,textarea,button,select{width:100%;padding:12px;margin:6px 0;border-radius:10px;border:1px solid #cbd5e1;font:inherit;box-sizing:border-box}
+button{background:linear-gradient(90deg,#14b8a6,#0e7490);color:#fff;border:0;cursor:pointer}pre{white-space:pre-wrap;background:#fff;padding:12px;border-radius:10px}
+.plans{display:flex;gap:8px}.plans div{flex:1;background:#fff;border-radius:10px;padding:12px;text-align:center}
+.bar{display:flex;justify-content:space-between;align-items:center;gap:8px}.bar button{width:auto}.badge{background:#ccfbf1;border-radius:20px;padding:6px 12px}
+.hide{display:none}.g{background:#fff;color:#0f172a;border:1px solid #cbd5e1}.f{background:#1877f2}</style></head><body><main>
+<div class="bar"><b>محسّن القوائم</b><span id="status" class="badge hide"></span><button id="out_btn" class="hide g" onclick="sb.auth.signOut()">خروج</button></div>
+<h1>حوّل منتجاتك إلى <span>قوائم احترافية</span></h1>
+
+<section id="login" class="hide"><p>سجّل دخول عشان تبدأ (3 محاولات مجانية للمستخدم الجديد)</p>
+<button class="g" onclick="login('google')">الدخول بحساب Google</button><!-- Facebook: enable after Meta review --><button class="f hide" onclick="login('facebook')">الدخول بحساب Facebook</button></section>
+
+<section id="app" class="hide">
+<input id="name" placeholder="اسم المنتج"><textarea id="details" rows="4" placeholder="تفاصيل المنتج"></textarea>
+<input id="img" type="file" accept="image/*"><button id="go">ولّد القائمة</button><pre id="out"></pre>
+<h2>الاشتراك</h2>
+<div class="plans"><div><b>شهري</b><br>$25<button onclick="pick('monthly')">اشترك</button></div><div><b>سنوي</b><br>$228<button onclick="pick('yearly')">اشترك</button></div></div>
+<div id="pay" class="hide"><h3>اختر طريقة الدفع</h3>
+<select id="method" onchange="show()"><option value="paypal">PayPal</option><option value="binance">Binance Pay</option><option value="orange">Orange Cash</option></select>
+<pre id="inst"></pre><a id="wa" target="_blank"><button>ابعت إيصال الدفع على واتساب</button></a></div>
+</section>
+<a id="wafab" target="_blank" style="position:fixed;bottom:16px;left:16px;background:#25d366;color:#fff;padding:12px 18px;border-radius:30px;text-decoration:none">واتساب 💬 الدعم</a>
+<script>
+const $=id=>document.getElementById(id);let sb,C={},ME=null,PLAN='';
+async function api(p,o={}){const {data}=await sb.auth.getSession();
+ return fetch(p,{...o,headers:{...(o.headers||{}),Authorization:'Bearer '+(data.session?.access_token||'')}})}
+function login(provider){sb.auth.signInWithOAuth({provider,options:{redirectTo:location.origin}})}
+async function refresh(){
+ const {data}=await sb.auth.getSession();const on=!!data.session;
+ $('login').classList.toggle('hide',on);$('app').classList.toggle('hide',!on);$('out_btn').classList.toggle('hide',!on);
+ if(!on){$('status').classList.add('hide');return}
+ const r=await api('/api/me');if(!r.ok)return;ME=await r.json();
+ $('status').classList.remove('hide');
+ $('status').textContent=ME.active?`اشتراكك ${ME.plan==='yearly'?'السنوي':'الشهري'}: باقي ${ME.daysLeft} يوم`:`متبقي ${ME.left} محاولات مجانية`;
+ wa();}
+function wa(){$('wafab').href='https://wa.me/'+C.whatsapp+'?text='+encodeURIComponent('مرحبا، محتاج مساعدة. حسابي: '+(ME?ME.email:''))}
+(async()=>{C=await (await fetch('/api/config')).json();
+ sb=supabase.createClient(C.supabaseUrl,C.supabaseAnon);wa();
+ sb.auth.onAuthStateChange(refresh);refresh()})();
+$('go').onclick=async()=>{let image;const f=$('img').files[0];
+ if(f){const d=await new Promise(r=>{const x=new FileReader();x.onload=()=>r(x.result.split(',')[1]);x.readAsDataURL(f)});image={mime:f.type,data:d}}
+ $('out').textContent='بنبحث عن المنتج على الإنترنت ونجهز أقوى قائمة... (ممكن ياخد نص دقيقة)';
+ const r=await api('/api/generate',{method:'POST',body:JSON.stringify({name:$('name').value,details:$('details').value,lang:'ar',image})});
+ const j=await r.json();$('out').textContent=r.status===402?'خلصت المحاولات المجانية، اشترك للمتابعة':JSON.stringify(j.result??j,null,2);refresh()};
+function pick(p){PLAN=p;$('pay').classList.remove('hide');show()}
+function show(){const m=$('method').value,price=C.plans[PLAN];
+ const d={paypal:'PayPal: '+C.paypal,binance:'Binance Pay ID: '+C.binance,orange:'Orange Cash: '+C.orange}[m];
+ $('inst').textContent=`المبلغ: $${price}${m==='orange'?' (بالجنيه حسب سعر الدولار اليوم)':''}\n${d}\nإيميل حسابك: ${ME.email}\nبعد التحويل ابعت صورة الإيصال على واتساب وهنفعّل اشتراكك.`;
+ $('wa').href='https://wa.me/'+C.whatsapp+'?text='+encodeURIComponent(`دفعت اشتراك ${PLAN==='yearly'?'سنوي':'شهري'} ($${price}) عن طريق ${m}. إيميل حسابي: ${ME.email}`)}
+</script></main></body></html>
