@@ -84,7 +84,8 @@ http.createServer(async (req, res) => {
       await sb(`/rest/v1/profiles?id=eq.${p.id}`, { method: 'PATCH', body: JSON.stringify({ plan: b.plan, plan_until: until }) });
       return send(res, 200, { ok: true, until });
     }
-    const f = path.join('public', req.url === '/' ? 'index.html' : path.normalize(req.url).replace(/^(\.\.[/\\])+/, ''));
+    const u = req.url.split('?')[0].split('#')[0];
+    const f = path.join('public', u === '/' ? 'index.html' : path.normalize(u).replace(/^(\.\.[/\\])+/, ''));
     if (fs.existsSync(f) && fs.statSync(f).isFile()) { res.writeHead(200, { 'Content-Type': mime[path.extname(f)] || 'application/octet-stream' }); return fs.createReadStream(f).pipe(res); }
     res.writeHead(404); res.end('not found');
   } catch (e) { send(res, 500, { error: String(e.message) }); }
