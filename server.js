@@ -40,10 +40,15 @@ Return ONLY a JSON object (no markdown fence) with keys: titles (3 SEO titles), 
   const parts = [{ text: prompt }];
   if (image) parts.push({ inline_data: { mime_type: image.mime, data: image.data } });
   // Search grounding cannot be combined with responseMimeType=json, so JSON is requested in the prompt and parsed below.
-  const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': KEY },
-    body: JSON.stringify({ contents: [{ parts }], ...(GROUND ? { tools: [{ google_search: {} }] } : { generationConfig: { responseMimeType: 'application/json' } }) }),
-  });
+  let r;
+  for (const m of [...new Set([MODEL, 'gemini-2.5-flash', 'gemini-2.5-flash-lite'])]) {
+    r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${m}:generateContent`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': KEY },
+      body: JSON.stringify({ contents: [{ parts }], ...(GROUND ? { tools: [{ google_search: {} }] } : { generationConfig: { responseMimeType: 'application/json' } }) }),
+    });
+    if (r.ok) break;
+    console.log('gemini', m, r.status, (await r.text()).slice(0, 300));
+  }
   if (!r.ok) throw new Error('gemini ' + r.status);
   const j = await r.json();
   const c = j.candidates[0];
