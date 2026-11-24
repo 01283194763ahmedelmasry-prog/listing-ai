@@ -10,7 +10,7 @@ const FREE = Number(process.env.FREE_TRIES || 3);
 const ADMIN = process.env.ADMIN_TOKEN || '';
 const PORT = Number(process.env.PORT || 3000);
 const SB = process.env.SUPABASE_URL, SBK = process.env.SUPABASE_SERVICE_KEY, SBA = process.env.SUPABASE_ANON_KEY;
-const sb = (p, o = {}) => fetch(SB + p, { ...o, headers: { apikey: SBK, Authorization: 'Bearer ' + SBK, 'Content-Type': 'application/json', ...(o.headers || {}) } });
+const sb = (p, o = {}) => fetch(SB + p, { ...o, headers: { apikey: SBK, ...(SBK && !SBK.startsWith('sb_') ? { Authorization: 'Bearer ' + SBK } : {}), 'Content-Type': 'application/json', ...(o.headers || {}) } });
 const mime = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css' };
 
 // Verify the Supabase session token sent by the browser and load the profile.
