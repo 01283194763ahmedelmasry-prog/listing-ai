@@ -69,3 +69,7 @@ create table if not exists searches (
 alter table searches enable row level security;
 revoke all on searches from public, anon, authenticated;
 grant all on searches to service_role;
+
+-- Customers can re-open their own past generations.
+alter table searches add column if not exists result jsonb;
+create index if not exists searches_user_created_idx on searches (user_id, created_at desc);
