@@ -40,16 +40,18 @@ process.on('uncaughtException', (e) => console.error('uncaughtException', e));
 process.on('unhandledRejection', (e) => console.error('unhandledRejection', e));
 const send = (res, code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(obj)); };
 
+const cool = {}; // model -> time until which it is skipped after a 429/503
 // One vision call per generation (max 2 attempts: second goes to the next model in the chain). Returns '' on failure so the flow continues.
 async function analyzeImage(image) {
-  const ask = `Look at this product photo as an e-commerce expert. Reply with ONLY a JSON object (no markdown) with keys: product_type (what the product is, e.g. smartphone, headphones), name (brand and model if visible, including any printed text on the product or box, e.g. "Max 6 inch"; empty string if not visible), visible_text (array of text strings you can read on the image), specs (array of specs visible or evident from the image: colors, screen shape, design, ports, accessories included), notes (one short line). Only report what is actually visible. Do not guess brand, model or numeric specs that are not shown.`;
-  for (const m of MODELS.slice(0, 2)) {
+  const ask = `Look at this product photo as an e-commerce expert. Reply with ONLY a JSON object (no markdown) with keys: product_type (what the product is, e.g. smartphone, headphones, phone case; decide from its overall shape, screen, camera, buttons), name (brand and model if visible, including any printed text on the product or box. Text like "6 inch" on a phone is its screen size; empty string if not visible), visible_text (array of text strings you can read on the image), specs (array of specs visible or evident from the image: colors, screen shape, design, ports, accessories included), notes (one short line). Only report what is actually visible. Do not guess brand, model or numeric specs that are not shown.`;
+  for (const m of MODELS) { // one attempt per model (fallback on unavailable/quota), first success wins
+    if ((cool[m] || 0) > Date.now()) continue;
     try {
       const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${m}:generateContent`, {
         method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': KEY }, signal: AbortSignal.timeout(20000),
         body: JSON.stringify({ contents: [{ parts: [{ text: ask }, { inline_data: { mime_type: image.mime, data: image.data } }] }], generationConfig: { responseMimeType: 'application/json' } }),
       });
-      if (!r.ok) { console.log('vision', m, r.status, (await r.text()).slice(0, 200)); continue; }
+      if (!r.ok) { if (r.status === 429 || r.status === 503) cool[m] = Date.now() + 60000; console.log('vision', m, r.status, (await r.text()).slice(0, 120)); continue; }
       const j = await r.json();
       const t = j.candidates[0].content.parts.map((p) => p.text || '').join('');
       const mm = /\{[\s\S]*\}/.exec(t); const a = JSON.parse(mm ? mm[0] : t);
@@ -76,6 +78,7 @@ Return ONLY a JSON object (no markdown fence) with keys: titles (3 SEO titles), 
   let r;
   const deadline = Date.now() + 70000; // total server-side budget for the text generation
   outer: for (const m of MODELS) {
+    if ((cool[m] || 0) > Date.now() && m !== MODELS[MODELS.length - 1]) continue;
     for (let a = 0; a < 2; a++) {
       if (Date.now() > deadline) break outer;
       try { r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${m}:generateContent`, {
@@ -84,7 +87,8 @@ Return ONLY a JSON object (no markdown fence) with keys: titles (3 SEO titles), 
       }); } catch (e) { console.log('gemini', m, 'fetch', String(e.message).slice(0, 100)); r = null; await sleep(500); continue; }
       if (r.ok) break outer;
       const st = r.status;
-      console.log('gemini', m, st, (await r.text()).slice(0, 300));
+      if (st === 429 || st === 503) cool[m] = Date.now() + 60000;
+      console.log('gemini', m, st, (await r.text()).slice(0, 120));
       if (st !== 503) break; // 429 = quota: retrying the same model is pointless // hard failure (404 retired model, 400 bad request): next model
       await sleep(1500 * (a + 1)); // demand spike: wait and retry the same model
     }
