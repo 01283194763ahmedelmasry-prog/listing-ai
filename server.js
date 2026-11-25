@@ -31,7 +31,13 @@ async function user(req) {
 }
 const meInfo = (p) => ({ email: p.email, ref: p.id.slice(0, 8).toUpperCase(), active: p.active, plan: p.active ? p.plan : null,
   daysLeft: p.active ? Math.ceil((new Date(p.plan_until) - Date.now()) / 864e5) : 0, planUntil: p.plan_until, left: p.active ? null : Math.max(0, FREE - p.free_used) });
-const body = (req) => new Promise((r) => { let b = ''; req.on('data', (c) => (b += c)); req.on('end', () => r(JSON.parse(b || '{}'))); });
+// Safe JSON body reader: never throws inside an event handler (that used to crash the whole process), caps size at ~9MB (photo as base64).
+const body = (req) => new Promise((resolve, reject) => { let b = '', n = 0, dead = false;
+  req.on('data', (c) => { n += c.length; if (n > 9e6) { dead = true; reject(Object.assign(new Error('too_large'), { code: 413 })); req.destroy(); } else b += c; });
+  req.on('end', () => { if (dead) return; try { const v = JSON.parse(b || '{}'); resolve(v && typeof v === 'object' && !Array.isArray(v) ? v : {}); } catch { reject(Object.assign(new Error('bad_json'), { code: 400 })); } });
+  req.on('error', () => { if (!dead) reject(Object.assign(new Error('bad_request'), { code: 400 })); }); });
+process.on('uncaughtException', (e) => console.error('uncaughtException', e));
+process.on('unhandledRejection', (e) => console.error('unhandledRejection', e));
 const send = (res, code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(obj)); };
 
 async function generate({ name, details, lang, outLang, image }) {
@@ -72,22 +78,23 @@ Return ONLY a JSON object (no markdown fence) with keys: titles (3 SEO titles), 
 
 http.createServer(async (req, res) => {
   try {
-    if (req.url === '/api/visit' && req.method === 'POST') {
-      const r = await sb('/rest/v1/rpc/increment_visit', { method: 'POST', body: '{}' });
-      if (!r.ok) return send(res, 503, { error: 'counter_unavailable' });
-      return send(res, 200, { visits: await r.json() });
-    }
     if (req.url === '/api/me') { const p = await user(req); return p ? send(res, 200, meInfo(p)) : send(res, 401, { error: 'login_required' }); }
     if (req.url === '/api/generate' && req.method === 'POST') {
       const p = await user(req);
       if (!p) return send(res, 401, { error: 'login_required' });
+      const inp = await body(req); // parse and validate BEFORE using up a free try
+      inp.name = String(inp.name || '').trim().slice(0, 300); inp.details = String(inp.details || '').trim().slice(0, 3000);
+      if (!inp.name) return send(res, 400, { error: 'name_required' });
+      if (inp.image && (typeof inp.image.data !== 'string' || !/^image\//.test(String(inp.image.mime)))) delete inp.image;
       const left = await (await sb('/rest/v1/rpc/consume_try', { method: 'POST', body: JSON.stringify({ uid: p.id, free_limit: FREE }) })).json();
       if (left < 0) return send(res, 402, { error: 'free_tries_over' });
-      try { const out = await generate(await body(req)); return send(res, 200, { result: out, left: left === 9999 ? null : left }); }
+      try { const out = await generate(inp); return send(res, 200, { result: out, left: left === 9999 ? null : left }); }
       catch (e) { await sb('/rest/v1/rpc/refund_try', { method: 'POST', body: JSON.stringify({ uid: p.id }) }); throw e; }
     }
     // Which Gemini models this key can actually use (names only, no secrets).
+    if (req.url === '/healthz') { res.writeHead(200); return res.end('ok'); }
     if (req.url === '/api/models') {
+      if (!ADMIN || req.headers['x-admin-token'] !== ADMIN) return send(res, 403, { error: 'forbidden' });
       const r = await fetch('https://generativelanguage.googleapis.com/v1beta/models?pageSize=200', { headers: { 'x-goog-api-key': KEY } });
       const j = await r.json();
       if (!r.ok) return send(res, 502, { error: 'list_failed', status: r.status, detail: JSON.stringify(j).slice(0, 300) });
@@ -103,7 +110,11 @@ http.createServer(async (req, res) => {
     if (req.url === '/api/admin/activate' && req.method === 'POST') {
       const b = await body(req);
       if (!ADMIN || b.token !== ADMIN) return send(res, 403, { error: 'forbidden' });
-      const p = (await (await sb(`/rest/v1/profiles?email=eq.${encodeURIComponent(b.email)}&select=*`)).json())[0];
+      if (b.plan !== 'monthly' && b.plan !== 'yearly') return send(res, 400, { error: 'bad_plan' });
+      const em = String(b.email || '').trim();
+      if (!em) return send(res, 404, { error: 'user_not_found' });
+      let p = (await (await sb(`/rest/v1/profiles?email=eq.${encodeURIComponent(em)}&select=*`)).json())[0];
+      if (!p && em !== em.toLowerCase()) p = (await (await sb(`/rest/v1/profiles?email=eq.${encodeURIComponent(em.toLowerCase())}&select=*`)).json())[0];
       if (!p) return send(res, 404, { error: 'user_not_found' });
       const start = p.plan_until && new Date(p.plan_until) > new Date() ? new Date(p.plan_until) : new Date();
       const until = new Date(start.getTime() + (b.plan === 'yearly' ? 365 : 30) * 864e5).toISOString();
@@ -114,5 +125,6 @@ http.createServer(async (req, res) => {
     const f = path.join('public', u === '/' ? 'index.html' : path.normalize(u).replace(/^(\.\.[/\\])+/, ''));
     if (fs.existsSync(f) && fs.statSync(f).isFile()) { res.writeHead(200, { 'Content-Type': mime[path.extname(f)] || 'application/octet-stream' }); return fs.createReadStream(f).pipe(res); }
     res.writeHead(404); res.end('not found');
-  } catch (e) { send(res, 500, { error: String(e.message) }); }
+  } catch (e) { if (!res.headersSent) send(res, e.code === 400 || e.code === 413 ? e.code : 500, { error: String(e.message) }); }
 }).listen(PORT, () => console.log('http://localhost:' + PORT));
+
