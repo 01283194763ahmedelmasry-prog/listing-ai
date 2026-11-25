@@ -54,3 +54,18 @@ end $$;
 revoke execute on function increment_visit() from public, anon, authenticated;
 grant execute on function increment_visit() to service_role;
 
+
+-- Search history: every listing generation request, so the owner can see what customers search for.
+create table if not exists searches (
+  id bigint generated always as identity primary key,
+  created_at timestamptz not null default now(),
+  user_id uuid,
+  email text,
+  name text not null,
+  details text,
+  out_lang text,
+  has_image boolean not null default false
+);
+alter table searches enable row level security;
+revoke all on searches from public, anon, authenticated;
+grant all on searches to service_role;
