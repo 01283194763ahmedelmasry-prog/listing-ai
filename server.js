@@ -91,6 +91,8 @@ http.createServer(async (req, res) => {
       inp.name = String(inp.name || '').trim().slice(0, 300); inp.details = String(inp.details || '').trim().slice(0, 3000);
       if (!inp.name) return send(res, 400, { error: 'name_required' });
       if (inp.image && (typeof inp.image.data !== 'string' || !/^image\//.test(String(inp.image.mime)))) delete inp.image;
+      // Record what customers search for (owner reviews these in the admin panel). Never block or fail the request on this.
+      sb('/rest/v1/searches', { method: 'POST', body: JSON.stringify({ user_id: p.id, email: p.email, name: inp.name, details: inp.details, out_lang: String(inp.outLang || inp.lang || '').slice(0, 10), has_image: !!inp.image }) }).catch(() => {});
       const left = await (await sb('/rest/v1/rpc/consume_try', { method: 'POST', body: JSON.stringify({ uid: p.id, free_limit: FREE }) })).json();
       if (left < 0) return send(res, 402, { error: 'free_tries_over' });
       try { const out = await generate(inp); return send(res, 200, { result: out, left: left === 9999 ? null : left }); }
@@ -125,6 +127,15 @@ http.createServer(async (req, res) => {
       const until = new Date(start.getTime() + (b.plan === 'yearly' ? 365 : 30) * 864e5).toISOString();
       await sb(`/rest/v1/profiles?id=eq.${p.id}`, { method: 'PATCH', body: JSON.stringify({ plan: b.plan, plan_until: until }) });
       return send(res, 200, { ok: true, until });
+    }
+    // Owner-only: recent customer searches for the admin panel. POST /api/admin/searches {token, limit?}
+    if (req.url === '/api/admin/searches' && req.method === 'POST') {
+      const b = await body(req);
+      if (!ADMIN || b.token !== ADMIN) return send(res, 403, { error: 'forbidden' });
+      const lim = Math.min(Math.max(Number(b.limit) || 50, 1), 200);
+      const r = await sb('/rest/v1/searches?select=created_at,email,name,details,out_lang,has_image&order=created_at.desc&limit=' + lim);
+      if (!r.ok) return send(res, 502, { error: 'searches_unavailable' });
+      return send(res, 200, { searches: await r.json() });
     }
     const u = req.url.split('?')[0].split('#')[0];
     const f = path.join('public', u === '/' ? 'index.html' : path.normalize(u).replace(/^(\.\.[/\\])+/, ''));
