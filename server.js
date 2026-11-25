@@ -62,11 +62,11 @@ Return ONLY a JSON object (no markdown fence) with keys: titles (3 SEO titles), 
   const j = await r.json();
   const c = j.candidates[0];
   const text = c.content.parts.map((p) => p.text || '').join('');
-  const m = /\{[\s\S]*\}/.exec(text);
-  if (!m) throw new Error('bad_model_output');
-  const out = JSON.parse(m[0]);
-  out.sources = (c.groundingMetadata?.groundingChunks || []).map((g) => g.web).filter(Boolean).map((w) => ({ title: w.title, url: w.uri })).slice(0, 8);
-  out.searches = c.groundingMetadata?.webSearchQueries || [];
+  // Parse defensively; internal fields (research_notes, sources, searches) are never sent to the customer.
+  let out;
+  try { const m = /\{[\s\S]*\}/.exec(text); out = JSON.parse(m ? m[0] : text); } catch { out = { raw: text }; }
+  if (!out || typeof out !== 'object' || Array.isArray(out)) out = { raw: text };
+  delete out.research_notes; delete out.sources; delete out.searches;
   return out;
 }
 
