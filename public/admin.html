@@ -1,0 +1,31 @@
+<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>تفعيل الاشتراكات</title>
+<style>body{font-family:system-ui,sans-serif;background:#f8fafc;margin:0;color:#0f172a}main{max-width:420px;margin:auto;padding:24px}
+input,button,select{width:100%;padding:14px;margin:8px 0;border-radius:10px;border:1px solid #cbd5e1;font:inherit;box-sizing:border-box}
+button{background:linear-gradient(90deg,#14b8a6,#0e7490);color:#fff;border:0;cursor:pointer;font-weight:bold}
+#msg{padding:12px;border-radius:10px;white-space:pre-wrap}.ok{background:#ccfbf1}.err{background:#fee2e2}label{font-size:14px}</style></head><body><main>
+<h1>تفعيل اشتراك عميل</h1>
+<p style="font-size:14px;color:#475569">بعد ما العميل يبعت إيصال الدفع على واتساب: اكتب إيميل حسابه (نفس الإيميل اللي سجل به في الموقع)، اختار الباقة، ودوّس تفعيل.</p>
+<label>رمز الأدمن</label><input id="token" type="password" placeholder="الرمز السري" autocomplete="off">
+<label>إيميل العميل</label><input id="email" type="email" dir="ltr" placeholder="customer@email.com">
+<label>الباقة</label><select id="plan"><option value="monthly">شهري — $25 (30 يوم)</option><option value="yearly">سنوي — $228 (365 يوم)</option></select>
+<button id="go">تفعيل</button>
+<div id="msg" style="display:none"></div>
+<script>
+const $=id=>document.getElementById(id);
+$('token').value=localStorage.adm_token||'';
+$('go').onclick=async()=>{
+ const m=$('msg');m.style.display='block';m.className='';m.textContent='...جاري التفعيل';
+ localStorage.adm_token=$('token').value;
+ try{
+  const r=await fetch('/api/admin/activate',{method:'POST',headers:{'Content-Type':'application/json'},
+   body:JSON.stringify({token:$('token').value.trim(),email:$('email').value.trim(),plan:$('plan').value})});
+  const j=await r.json();
+  if(r.ok&&j.ok){m.className='ok';const d=new Date(j.until);
+   m.textContent='تم التفعيل ✅\nالاشتراك شغال لحد: '+d.toLocaleDateString('ar-EG',{year:'numeric',month:'long',day:'numeric'});}
+  else if(j.error==='forbidden'){m.className='err';m.textContent='رمز الأدمن غلط ❌';}
+  else if(j.error==='user_not_found'){m.className='err';m.textContent='مفيش حساب بالإيميل ده ❌\nاتأكد إن العميل سجل في الموقع الأول بنفس الإيميل.';}
+  else{m.className='err';m.textContent='حصل خطأ: '+(j.error||r.status);}
+ }catch(e){m.className='err';m.textContent='مفيش اتصال بالسيرفر، جرب تاني.';}
+};
+</script></main></body></html>
