@@ -3,7 +3,10 @@ import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
 if (fs.existsSync('.env')) for (const l of fs.readFileSync('.env','utf8').split('\n')) { const m = /^([A-Z_]+)=(.*)$/.exec(l.trim()); if (m && !(m[1] in process.env)) process.env[m[1]] = m[2]; }
-const KEY = process.env.GEMINI_API_KEY;
+// Several Gemini keys (from different AI Studio projects = independent quotas): GEMINI_API_KEYS=k1,k2 (comma-separated) plus the legacy GEMINI_API_KEY.
+const KEYS = [...new Set([...(process.env.GEMINI_API_KEYS || '').split(','), process.env.GEMINI_API_KEY || ''].map((k) => k.trim()).filter(Boolean))];
+const KEY = KEYS[0];
+let rr = 0; // round-robin start so load spreads over keys
 const GROUND = process.env.GROUNDING === 'on'; // needs paid-tier Gemini billing
 // Model chain: Google retires older models for new API keys (2.5 returns 404 "no longer available to new users"),
 // so keep several current fallbacks and retry 503/429 (demand spikes) before moving on.
@@ -40,20 +43,22 @@ process.on('uncaughtException', (e) => console.error('uncaughtException', e));
 process.on('unhandledRejection', (e) => console.error('unhandledRejection', e));
 const send = (res, code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(obj)); };
 
-const cool = {}; // model -> time until which it is skipped after a 429/503
+const cool = {}; // 'keyIndex:model' -> time until which it is skipped after a 429/503
+// Ordered (model, key) attempts: for each model try every key (rotating start) before falling to the next model.
+function pairs() { const o = rr++ % Math.max(KEYS.length, 1); return MODELS.flatMap((m) => KEYS.map((_, i) => { const ki = (i + o) % KEYS.length; return [m, KEYS[ki], ki + ':' + m]; })); }
 // One vision call per generation (max 2 attempts: second goes to the next model in the chain). Returns '' on failure so the flow continues.
 async function analyzeImage(image) {
   const ask = `Look at this product photo as an e-commerce expert. Reply with ONLY a JSON object (no markdown) with keys: product_type (what the product is, e.g. smartphone, headphones, phone case; decide from its overall shape, screen, camera, buttons), name (brand and model if visible, including any printed text on the product or box. Text like "6 inch" on a phone is its screen size; empty string if not visible), visible_text (array of text strings you can read on the image), specs (array of specs visible or evident from the image: colors, screen shape, design, ports, accessories included), notes (one short line). Only report what is actually visible. Do not guess brand, model or numeric specs that are not shown.`;
   const vdeadline = Date.now() + 30000;
-  for (const m of MODELS) { // one attempt per model (fallback on unavailable/quota), first success wins
-    if ((cool[m] || 0) > Date.now()) continue;
+  for (const [m, K, ck] of pairs()) { // one attempt per (model,key), first success wins
+    if ((cool[ck] || 0) > Date.now()) continue;
     if (Date.now() > vdeadline) break;
     try {
       const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${m}:generateContent`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': KEY }, signal: AbortSignal.timeout(15000),
+        method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': K }, signal: AbortSignal.timeout(15000),
         body: JSON.stringify({ contents: [{ parts: [{ text: ask }, { inline_data: { mime_type: image.mime, data: image.data } }] }], generationConfig: { responseMimeType: 'application/json' } }),
       });
-      if (!r.ok) { if (r.status === 429 || r.status === 503 || r.status === 404) cool[m] = Date.now() + 60000; console.log('vision', m, r.status, (await r.text()).slice(0, 120)); continue; }
+      if (!r.ok) { if (r.status === 429 || r.status === 503 || r.status === 404) cool[ck] = Date.now() + 60000; console.log('vision', ck, r.status, (await r.text()).slice(0, 120)); continue; }
       const j = await r.json();
       const t = j.candidates[0].content.parts.map((p) => p.text || '').join('');
       const mm = /\{[\s\S]*\}/.exec(t); const a = JSON.parse(mm ? mm[0] : t);
@@ -79,18 +84,19 @@ Return ONLY a JSON object (no markdown fence) with keys: titles (3 SEO titles), 
   // Search grounding cannot be combined with responseMimeType=json, so JSON is requested in the prompt and parsed below.
   let r;
   const deadline = Date.now() + 55000; // total server-side budget for the text generation
-  outer: for (const m of MODELS) {
-    if ((cool[m] || 0) > Date.now() && m !== MODELS[MODELS.length - 1]) continue;
+  const pl = pairs();
+  outer: for (const [pi, [m, K, ck]] of pl.entries()) {
+    if ((cool[ck] || 0) > Date.now() && pi !== pl.length - 1) continue;
     for (let a = 0; a < 2; a++) {
       if (Date.now() > deadline) break outer;
       try { r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${m}:generateContent`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': KEY }, signal: AbortSignal.timeout(30000),
+        method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': K }, signal: AbortSignal.timeout(30000),
         body: JSON.stringify({ contents: [{ parts }], ...(GROUND ? { tools: [{ google_search: {} }] } : { generationConfig: { responseMimeType: 'application/json' } }) }),
-      }); } catch (e) { console.log('gemini', m, 'fetch', String(e.message).slice(0, 100)); r = null; await sleep(500); continue; }
+      }); } catch (e) { console.log('gemini', ck, 'fetch', String(e.message).slice(0, 100)); r = null; await sleep(500); continue; }
       if (r.ok) break outer;
       const st = r.status;
-      if (st === 429 || st === 503) cool[m] = Date.now() + 60000;
-      console.log('gemini', m, st, (await r.text()).slice(0, 120));
+      if (st === 429 || st === 503) cool[ck] = Date.now() + 60000;
+      console.log('gemini', ck, st, (await r.text()).slice(0, 120));
       if (st !== 503) break; // 429 = quota: retrying the same model is pointless // hard failure (404 retired model, 400 bad request): next model
       await sleep(1500 * (a + 1)); // demand spike: wait and retry the same model
     }
