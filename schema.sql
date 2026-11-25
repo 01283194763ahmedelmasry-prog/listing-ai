@@ -51,5 +51,6 @@ begin
   update site_stats set visits = visits + 1 where id = true returning visits into total;
   return total;
 end $$;
-revoke execute on function increment_visit() from public, authenticated;
+revoke execute on function increment_visit() from public, anon, authenticated;
 grant execute on function increment_visit() to service_role;
+
