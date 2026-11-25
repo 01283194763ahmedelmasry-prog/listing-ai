@@ -1,18 +1,38 @@
 <!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>تفعيل الاشتراكات</title>
-<style>body{font-family:system-ui,sans-serif;background:#f8fafc;margin:0;color:#0f172a}main{max-width:420px;margin:auto;padding:24px}
-input,button,select{width:100%;padding:14px;margin:8px 0;border-radius:10px;border:1px solid #cbd5e1;font:inherit;box-sizing:border-box}
+<meta name="color-scheme" content="light dark">
+<script>document.documentElement.dataset.theme=localStorage.theme||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light')</script>
+<style>:root{--bg:#f8fafc;--fg:#0f172a;--muted:#475569;--card:#fff;--border:#e2e8f0;--field:#cbd5e1;--ok-bg:#ccfbf1;--ok-fg:#115e59;--err-bg:#fee2e2;--err-fg:#991b1b}
+[data-theme=dark]{--bg:#0b1220;--fg:#e2e8f0;--muted:#94a3b8;--card:#121d31;--border:#1f2b3f;--field:#33455e;--ok-bg:#0f3d3a;--ok-fg:#5eead4;--err-bg:#3f1d1d;--err-fg:#fca5a5}
+*{transition:background-color .25s,border-color .25s,color .25s,box-shadow .25s}
+body{font-family:system-ui,sans-serif;background:var(--bg);margin:0;color:var(--fg)}main{max-width:420px;margin:auto;padding:24px}
+input,button,select{width:100%;padding:14px;margin:8px 0;border-radius:10px;border:1px solid var(--field);font:inherit;box-sizing:border-box;background:var(--card);color:var(--fg)}
+input:focus,select:focus{outline:none;border-color:#14b8a6;box-shadow:0 0 0 3px rgba(20,184,166,.18)}
 button{background:linear-gradient(90deg,#14b8a6,#0e7490);color:#fff;border:0;cursor:pointer;font-weight:bold}
-#msg{padding:12px;border-radius:10px;white-space:pre-wrap}.ok{background:#ccfbf1}.err{background:#fee2e2}label{font-size:14px}</style></head><body><main>
+button:hover{filter:brightness(1.08)}
+#msg{padding:12px;border-radius:10px;white-space:pre-wrap}.ok{background:var(--ok-bg);color:var(--ok-fg)}.err{background:var(--err-bg);color:var(--err-fg)}label{font-size:14px}
+.muted{font-size:14px;color:var(--muted)}.small{font-size:13px;color:var(--muted)}
+.srow{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:12px;margin:8px 0}
+.srow .sd{font-size:13px;white-space:pre-wrap;margin-top:4px}.srow .sm{font-size:12px;color:var(--muted);margin-top:6px}
+#theme_btn{position:fixed;top:12px;left:12px;width:auto;padding:8px 12px;background:var(--card);color:var(--fg);border:1px solid var(--field);font-weight:normal}</style></head><body><main>
+<button id="theme_btn" aria-label="dark mode">🌙</button>
 <h1>تفعيل اشتراك عميل</h1>
-<p style="font-size:14px;color:#475569">بعد ما العميل يبعت إيصال الدفع على واتساب: اكتب إيميل حسابه (نفس الإيميل اللي سجل به في الموقع)، اختار الباقة، ودوّس تفعيل.</p>
+<p class="muted">بعد ما العميل يبعت إيصال الدفع على واتساب: اكتب إيميل حسابه (نفس الإيميل اللي سجل به في الموقع)، اختار الباقة، ودوّس تفعيل.</p>
 <label>رمز الأدمن</label><input id="token" type="password" placeholder="الرمز السري" autocomplete="off">
 <label>إيميل العميل</label><input id="email" type="email" dir="ltr" placeholder="customer@email.com">
 <label>الباقة</label><select id="plan"><option value="monthly">شهري — $25 (30 يوم)</option><option value="yearly">سنوي — $228 (365 يوم)</option></select>
 <button id="go">تفعيل</button>
 <div id="msg" style="display:none"></div>
+<hr style="margin:32px 0;border:0;border-top:1px solid var(--border)">
+<h2 style="font-size:18px;margin:0 0 4px">آخر عمليات البحث</h2>
+<p class="muted">شوف العملاء بيدوّروا على إيه في الموقع (بنفس رمز الأدمن اللي فوق).</p>
+<button id="load">عرض الأبحاث</button>
+<div id="list"></div>
 <script>
 const $=id=>document.getElementById(id);
+function setTheme(m){document.documentElement.dataset.theme=m;localStorage.theme=m;$('theme_btn').textContent=m==='dark'?'☀️':'🌙'}
+$('theme_btn').onclick=()=>setTheme(document.documentElement.dataset.theme==='dark'?'light':'dark');
+setTheme(document.documentElement.dataset.theme==='dark'?'dark':'light');
 $('token').value=localStorage.adm_token||'';
 $('go').onclick=async()=>{
  const m=$('msg');m.style.display='block';m.className='';m.textContent='...جاري التفعيل';
@@ -27,5 +47,24 @@ $('go').onclick=async()=>{
   else if(j.error==='user_not_found'){m.className='err';m.textContent='مفيش حساب بالإيميل ده ❌\nاتأكد إن العميل سجل في الموقع الأول بنفس الإيميل.';}
   else{m.className='err';m.textContent='حصل خطأ: '+(j.error||r.status);}
  }catch(e){m.className='err';m.textContent='مفيش اتصال بالسيرفر، جرب تاني.';}
+};
+$('load').onclick=async()=>{
+ const l=$('list');l.innerHTML='<p class="muted">...جاري التحميل</p>';
+ try{
+  const r=await fetch('/api/admin/searches',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:$('token').value.trim()})});
+  const j=await r.json();
+  if(!r.ok){l.innerHTML='<div class="err" style="padding:12px;border-radius:10px">'+(j.error==='forbidden'?'رمز الأدمن غلط ❌':'حصل خطأ: '+(j.error||r.status))+'</div>';return;}
+  const rows=j.searches||[];
+  if(!rows.length){l.innerHTML='<p class="muted">لسه مفيش أبحاث متسجلة.</p>';return;}
+  const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  l.innerHTML='<p class="small">'+rows.length+' بحث</p>'+rows.map(s=>{
+   const d=new Date(s.created_at);
+   return '<div class="srow">'
+    +'<div style="font-weight:bold">'+esc(s.name)+(s.has_image?' 🖼️':'')+'</div>'
+    +(s.details?'<div class="sd">'+esc(s.details)+'</div>':'')
+    +'<div class="sm">'+esc(s.email||'—')+' · '+d.toLocaleString('ar-EG')+(s.out_lang?' · '+esc(s.out_lang):'')+'</div>'
+    +'</div>';
+  }).join('');
+ }catch(e){l.innerHTML='<div class="err" style="padding:12px;border-radius:10px">مفيش اتصال بالسيرفر، جرب تاني.</div>';}
 };
 </script></main></body></html>
