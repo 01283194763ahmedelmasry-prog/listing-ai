@@ -46,7 +46,7 @@ async function analyzeImage(image) {
   for (const m of MODELS.slice(0, 2)) {
     try {
       const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${m}:generateContent`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': KEY },
+        method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': KEY }, signal: AbortSignal.timeout(20000),
         body: JSON.stringify({ contents: [{ parts: [{ text: ask }, { inline_data: { mime_type: image.mime, data: image.data } }] }], generationConfig: { responseMimeType: 'application/json' } }),
       });
       if (!r.ok) { console.log('vision', m, r.status, (await r.text()).slice(0, 200)); continue; }
@@ -74,20 +74,22 @@ Return ONLY a JSON object (no markdown fence) with keys: titles (3 SEO titles), 
   if (image) parts.push({ inline_data: { mime_type: image.mime, data: image.data } });
   // Search grounding cannot be combined with responseMimeType=json, so JSON is requested in the prompt and parsed below.
   let r;
+  const deadline = Date.now() + 70000; // total server-side budget for the text generation
   outer: for (const m of MODELS) {
-    for (let a = 0; a < 3; a++) {
-      r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${m}:generateContent`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': KEY },
+    for (let a = 0; a < 2; a++) {
+      if (Date.now() > deadline) break outer;
+      try { r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${m}:generateContent`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': KEY }, signal: AbortSignal.timeout(40000),
         body: JSON.stringify({ contents: [{ parts }], ...(GROUND ? { tools: [{ google_search: {} }] } : { generationConfig: { responseMimeType: 'application/json' } }) }),
-      });
+      }); } catch (e) { console.log('gemini', m, 'fetch', String(e.message).slice(0, 100)); r = null; await sleep(500); continue; }
       if (r.ok) break outer;
       const st = r.status;
       console.log('gemini', m, st, (await r.text()).slice(0, 300));
-      if (st !== 503 && st !== 429) break; // hard failure (404 retired model, 400 bad request): next model
+      if (st !== 503) break; // 429 = quota: retrying the same model is pointless // hard failure (404 retired model, 400 bad request): next model
       await sleep(1500 * (a + 1)); // demand spike: wait and retry the same model
     }
   }
-  if (!r.ok) throw new Error('gemini ' + r.status);
+  if (!r || !r.ok) throw new Error('gemini ' + (r ? r.status : 'timeout'));
   const j = await r.json();
   const c = j.candidates[0];
   const text = c.content.parts.map((p) => p.text || '').join('');
@@ -116,10 +118,15 @@ http.createServer(async (req, res) => {
       if (!inp.name && !inp.image) return send(res, 400, { error: 'name_required' });
       // Record what customers search for (owner reviews these in the admin panel). Never block or fail the request on this.
       const rowId = sb('/rest/v1/searches', { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify({ user_id: p.id, email: p.email, name: inp.name || '(from image)', details: inp.details, out_lang: String(inp.outLang || inp.lang || '').slice(0, 10), has_image: !!inp.image }) }).then((r) => r.json()).then((a) => (a && a[0] ? a[0].id : null)).catch(() => null);
-      const left = await (await sb('/rest/v1/rpc/consume_try', { method: 'POST', body: JSON.stringify({ uid: p.id, free_limit: FREE }) })).json();
-      if (left < 0) return send(res, 402, { error: 'free_tries_over' });
-      try { const out = await generate(inp); rowId.then((id) => id && sb('/rest/v1/searches?id=eq.' + id, { method: 'PATCH', body: JSON.stringify({ result: out }) })).catch(() => {}); return send(res, 200, { result: out, left: left === 9999 ? null : left }); }
-      catch (e) { await sb('/rest/v1/rpc/refund_try', { method: 'POST', body: JSON.stringify({ uid: p.id }) }); throw e; }
+      // Never charge for a failed generation: only check here, consume after a successful result.
+      if (!p.active && p.free_used >= FREE) return send(res, 402, { error: 'free_tries_over' });
+      try {
+        const out = await generate(inp);
+        if (!out || (!out.titles && !out.description && !out.raw)) throw new Error('empty_result');
+        const left = await (await sb('/rest/v1/rpc/consume_try', { method: 'POST', body: JSON.stringify({ uid: p.id, free_limit: FREE }) })).json();
+        rowId.then((id) => id && sb('/rest/v1/searches?id=eq.' + id, { method: 'PATCH', body: JSON.stringify({ result: out }) })).catch(() => {});
+        return send(res, 200, { result: out, left: left < 0 ? 0 : left === 9999 ? null : left });
+      } catch (e) { console.error('generate failed', String(e.message).slice(0, 200)); throw e; }
     }
     // Which Gemini models this key can actually use (names only, no secrets).
     if (req.url === '/healthz') { res.writeHead(200); return res.end('ok'); }
