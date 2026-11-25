@@ -52,11 +52,11 @@ function wa(){$('wafab').href='https://wa.me/'+C.whatsapp+'?text='+encodeURIComp
 (async()=>{C=await (await fetch('/api/config')).json();
  sb=supabase.createClient(C.supabaseUrl,C.supabaseAnon);wa();setLang(LANG);
  sb.auth.onAuthStateChange(refresh);refresh()})();
-$('go').onclick=async()=>{let image;const f=$('img').files[0];
+$('go').onclick=async()=>{if($('go').disabled)return;$('go').disabled=true;try{let image;const f=$('img').files[0];
  if(f){const d=await new Promise(r=>{const x=new FileReader();x.onload=()=>r(x.result.split(',')[1]);x.readAsDataURL(f)});image={mime:f.type,data:d}}
  $('out').textContent=t('wait');
  const r=await api('/api/generate',{method:'POST',body:JSON.stringify({name:$('name').value,details:$('details').value,lang:LANG,outLang:$('outlang').value,image})});
- const j=await r.json();$('out').textContent=r.status===402?t('nomore'):JSON.stringify(j.result??j,null,2);refresh()};
+ const j=await r.json();$('out').textContent=r.status===402?t('nomore'):JSON.stringify(j.result??j,null,2);refresh()}finally{$('go').disabled=false}};
 function pick(p){PLAN=p;$('pay').classList.remove('hide');show()}
 function show(){const m=$('method').value,price=C.plans[PLAN];
  const d={paypal:'PayPal: '+C.paypal,binance:'Binance Pay ID: '+C.binance,orange:'Orange Cash: '+C.orange}[m];
