@@ -15,7 +15,8 @@ button{background:linear-gradient(90deg,#14b8a6,#0e7490);color:#fff;border:0;cur
 
 <section id="app" class="hide">
 <input id="name" data-p="name" placeholder="اسم المنتج"><textarea id="details" rows="4" data-p="details" placeholder="تفاصيل المنتج"></textarea>
-<input id="img" type="file" accept="image/*"><button id="go" data-i="go">ولّد القائمة</button><pre id="out"></pre>
+<input id="img" type="file" accept="image/*"><button id="go" data-i="go">ولّد القائمة</button>
+<label for="outlang" data-i="outlang" style="font-size:14px">لغة المحتوى اللي هيتولّد</label><select id="outlang"><option value="ar">العربية</option><option value="en">English</option><option value="fr">Français</option><option value="es">Español</option><option value="de">Deutsch</option><option value="tr">Türkçe</option><option value="it">Italiano</option><option value="pt">Português</option></select><pre id="out"></pre>
 <h2 data-i="sub">الاشتراك</h2>
 <div class="plans"><div><b data-i="monthly">شهري</b><br>$25<button onclick="pick('monthly')" data-i="subscribe">اشترك</button></div><div><b data-i="yearly">سنوي</b><br>$228<button onclick="pick('yearly')" data-i="subscribe">اشترك</button></div></div>
 <div id="pay" class="hide"><h3 data-i="paymethod">اختر طريقة الدفع</h3>
@@ -26,14 +27,15 @@ button{background:linear-gradient(90deg,#14b8a6,#0e7490);color:#fff;border:0;cur
 <p style="text-align:center;font-size:13px"><a href="/privacy.html" data-i="privacy">سياسة الخصوصية</a> · <a href="/terms.html" data-i="terms">الشروط</a></p>
 <script>
 const $=id=>document.getElementById(id);let sb,C={},ME=null,PLAN='';
-const D={ar:{brand:'محسّن القوائم',logout:'خروج',h1:'حوّل منتجاتك إلى <span>قوائم احترافية</span>',loginp:'سجّل دخول عشان تبدأ (3 محاولات مجانية للمستخدم الجديد)',google:'الدخول بحساب Google',name:'اسم المنتج',details:'تفاصيل المنتج',go:'ولّد القائمة',sub:'الاشتراك',monthly:'شهري',yearly:'سنوي',subscribe:'اشترك',paymethod:'اختر طريقة الدفع',sendreceipt:'ابعت إيصال الدفع على واتساب',support:'واتساب 💬 الدعم',privacy:'سياسة الخصوصية',terms:'الشروط',active:(p,d)=>`اشتراكك ${p}: باقي ${d} يوم`,left:n=>`متبقي ${n} محاولات مجانية`,wamsg:'مرحبا، محتاج مساعدة. حسابي: ',wait:'بنجهز أقوى قائمة... (ممكن ياخد نص دقيقة)',nomore:'خلصت المحاولات المجانية، اشترك للمتابعة',amount:'المبلغ:',egp:' (بالجنيه حسب سعر الدولار اليوم)',email:'إيميل حسابك:',after:'بعد التحويل ابعت صورة الإيصال على واتساب وهنفعّل اشتراكك.',paid:'دفعت اشتراك',myemail:'إيميل حسابي:',btn:'English'},
-en:{brand:'Listing Optimizer',logout:'Sign out',h1:'Turn your products into <span>professional listings</span>',loginp:'Sign in to start (3 free tries for new users)',google:'Sign in with Google',name:'Product name',details:'Product details',go:'Generate listing',sub:'Subscription',monthly:'Monthly',yearly:'Yearly',subscribe:'Subscribe',paymethod:'Choose a payment method',sendreceipt:'Send payment receipt on WhatsApp',support:'WhatsApp 💬 Support',privacy:'Privacy Policy',terms:'Terms',active:(p,d)=>`Your ${p} plan: ${d} days left`,left:n=>`${n} free tries left`,wamsg:'Hi, I need help. My account: ',wait:'Preparing your listing... (may take up to 30 seconds)',nomore:'Free tries are used up. Subscribe to continue.',amount:'Amount:',egp:' (in EGP at today\'s dollar rate)',email:'Your account email:',after:'After paying, send the receipt photo on WhatsApp and we will activate your plan.',paid:'I paid for a',myemail:'My account email:',btn:'العربية'}};
+document.addEventListener('change',e=>{if(e.target.id==='outlang')localStorage.outlang=e.target.value});
+const D={ar:{brand:'محسّن القوائم',logout:'خروج',h1:'حوّل منتجاتك إلى <span>قوائم احترافية</span>',loginp:'سجّل دخول عشان تبدأ (3 محاولات مجانية للمستخدم الجديد)',google:'الدخول بحساب Google',name:'اسم المنتج',details:'تفاصيل المنتج',go:'ولّد القائمة',outlang:'لغة المحتوى اللي هيتولّد',sub:'الاشتراك',monthly:'شهري',yearly:'سنوي',subscribe:'اشترك',paymethod:'اختر طريقة الدفع',sendreceipt:'ابعت إيصال الدفع على واتساب',support:'واتساب 💬 الدعم',privacy:'سياسة الخصوصية',terms:'الشروط',active:(p,d)=>`اشتراكك ${p}: باقي ${d} يوم`,left:n=>`متبقي ${n} محاولات مجانية`,wamsg:'مرحبا، محتاج مساعدة. حسابي: ',wait:'بنجهز أقوى قائمة... (ممكن ياخد نص دقيقة)',nomore:'خلصت المحاولات المجانية، اشترك للمتابعة',amount:'المبلغ:',egp:' (بالجنيه حسب سعر الدولار اليوم)',email:'إيميل حسابك:',after:'بعد التحويل ابعت صورة الإيصال على واتساب وهنفعّل اشتراكك.',paid:'دفعت اشتراك',myemail:'إيميل حسابي:',btn:'English'},
+en:{brand:'Listing Optimizer',logout:'Sign out',h1:'Turn your products into <span>professional listings</span>',loginp:'Sign in to start (3 free tries for new users)',google:'Sign in with Google',name:'Product name',details:'Product details',go:'Generate listing',outlang:'Generated content language',sub:'Subscription',monthly:'Monthly',yearly:'Yearly',subscribe:'Subscribe',paymethod:'Choose a payment method',sendreceipt:'Send payment receipt on WhatsApp',support:'WhatsApp 💬 Support',privacy:'Privacy Policy',terms:'Terms',active:(p,d)=>`Your ${p} plan: ${d} days left`,left:n=>`${n} free tries left`,wamsg:'Hi, I need help. My account: ',wait:'Preparing your listing... (may take up to 30 seconds)',nomore:'Free tries are used up. Subscribe to continue.',amount:'Amount:',egp:' (in EGP at today\'s dollar rate)',email:'Your account email:',after:'After paying, send the receipt photo on WhatsApp and we will activate your plan.',paid:'I paid for a',myemail:'My account email:',btn:'العربية'}};
 let LANG=localStorage.lang||'ar';
 function t(k,...a){const v=D[LANG][k];return typeof v==='function'?v(...a):v}
 function setLang(l){LANG=l;localStorage.lang=l;document.documentElement.lang=l;document.documentElement.dir=l==='ar'?'rtl':'ltr';
  document.querySelectorAll('[data-i]').forEach(e=>e.innerHTML=D[l][e.dataset.i]);
  document.querySelectorAll('[data-p]').forEach(e=>e.placeholder=D[l][e.dataset.p]);
- $('lang_btn').textContent=D[l].btn;if(sb&&ME){refresh()}if(PLAN)show()}
+ $('lang_btn').textContent=D[l].btn;$('outlang').value=localStorage.outlang||l;if(sb&&ME){refresh()}if(PLAN)show()}
 
 async function api(p,o={}){const {data}=await sb.auth.getSession();
  return fetch(p,{...o,headers:{...(o.headers||{}),Authorization:'Bearer '+(data.session?.access_token||'')}})}
@@ -53,7 +55,7 @@ function wa(){$('wafab').href='https://wa.me/'+C.whatsapp+'?text='+encodeURIComp
 $('go').onclick=async()=>{let image;const f=$('img').files[0];
  if(f){const d=await new Promise(r=>{const x=new FileReader();x.onload=()=>r(x.result.split(',')[1]);x.readAsDataURL(f)});image={mime:f.type,data:d}}
  $('out').textContent=t('wait');
- const r=await api('/api/generate',{method:'POST',body:JSON.stringify({name:$('name').value,details:$('details').value,lang:LANG,image})});
+ const r=await api('/api/generate',{method:'POST',body:JSON.stringify({name:$('name').value,details:$('details').value,lang:LANG,outLang:$('outlang').value,image})});
  const j=await r.json();$('out').textContent=r.status===402?t('nomore'):JSON.stringify(j.result??j,null,2);refresh()};
 function pick(p){PLAN=p;$('pay').classList.remove('hide');show()}
 function show(){const m=$('method').value,price=C.plans[PLAN];
