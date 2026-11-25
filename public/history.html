@@ -1,0 +1,72 @@
+<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>بحوثي السابقة</title>
+<meta name="color-scheme" content="light dark">
+<script>document.documentElement.dataset.theme=localStorage.theme||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light')</script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>:root{--bg:#f8fafc;--fg:#0f172a;--muted:#475569;--card:#fff;--border:#e2e8f0;--field:#cbd5e1;--soft:#ccfbf1;--soft-fg:#115e59;--shadow:0 1px 3px rgba(15,23,42,.06);--lift:0 8px 20px rgba(15,23,42,.10)}
+[data-theme=dark]{--bg:#0b1220;--fg:#e2e8f0;--muted:#94a3b8;--card:#121d31;--border:#1f2b3f;--field:#33455e;--soft:#0f3d3a;--soft-fg:#5eead4;--shadow:0 1px 3px rgba(0,0,0,.45);--lift:0 8px 24px rgba(0,0,0,.5)}
+*{transition:background-color .25s,border-color .25s,color .25s,box-shadow .25s}
+body{font-family:system-ui,sans-serif;background:var(--bg);margin:0;color:var(--fg)}main{max-width:640px;margin:auto;padding:24px}
+.bar{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap}
+button,.lnk{padding:10px 14px;border-radius:10px;border:1px solid var(--field);font:inherit;background:var(--card);color:var(--fg);cursor:pointer;text-decoration:none;display:inline-block}
+button:hover,.lnk:hover{border-color:#14b8a6;box-shadow:var(--lift)}
+h1{font-size:22px;margin:20px 0 6px}.muted{color:var(--muted);font-size:14px}
+.h{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:14px 16px;margin:12px 0;box-shadow:var(--shadow)}
+.h:hover{box-shadow:var(--lift)}
+.h summary{cursor:pointer;list-style:none}.h summary::-webkit-details-marker{display:none}
+.h .n{font-weight:700;font-size:16px}.h .d{color:var(--muted);font-size:14px;margin-top:4px;white-space:pre-wrap;word-break:break-word}.h .m{color:var(--muted);font-size:12px;margin-top:6px}
+.sec{margin-top:14px}.sec h3{font-size:15px;margin:0 0 6px;color:#0f766e;display:flex;align-items:center;gap:8px}[data-theme=dark] .sec h3{color:#2dd4bf}
+.sec h3 button{margin-inline-start:auto;padding:4px 10px;font-size:13px}
+.it{background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:8px 12px;margin:6px 0;line-height:1.7;word-break:break-word;white-space:pre-wrap}
+.chips{display:flex;flex-wrap:wrap;gap:6px}.chip{background:var(--soft);color:var(--soft-fg);border-radius:20px;padding:4px 12px;font-size:14px}
+.msg{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:16px;text-align:center;color:var(--muted);margin-top:16px}
+.hide{display:none}.ok{background:#0d9488!important;color:#fff!important}
+</style></head><body><main>
+<div class="bar"><a class="lnk" href="/" id="back">→ الرئيسية</a><span><button id="lang_btn">English</button> <button id="theme_btn" aria-label="dark mode">🌙</button></span></div>
+<h1 id="ttl">بحوثي السابقة</h1>
+<p class="muted" id="sub">كل القوائم اللي ولّدتها قبل كده، الأحدث فوق. افتح أي واحدة وانسخ اللي محتاجه.</p>
+<div id="list"></div>
+<script>
+const $=id=>document.getElementById(id);
+const D={ar:{back:'→ الرئيسية',ttl:'بحوثي السابقة',sub:'كل القوائم اللي ولّدتها قبل كده، الأحدث فوق. افتح أي واحدة وانسخ اللي محتاجه.',btn:'English',loading:'جارٍ التحميل...',login:'سجّل دخول من الصفحة الرئيسية الأول عشان تشوف بحوثك.',empty:'لسه معندكش بحوث. ولّد أول قائمة من الصفحة الرئيسية.',err:'تعذّر تحميل بحوثك دلوقتي، جرّب تاني بعد لحظات.',noresult:'القائمة دي اتحفظت قبل ما نبدأ نحفظ النتيجة نفسها، فمش متاحة هنا.',titles:'العناوين',desc:'الوصف',bullets:'نقاط البيع',keywords:'الكلمات المفتاحية',ads:'نصوص الإعلانات',copy:'نسخ',copied:'تم ✓',img:'🖼️ بصورة'},
+en:{back:'← Home',ttl:'My history',sub:'Every listing you generated before, newest first. Open one and copy what you need.',btn:'العربية',loading:'Loading...',login:'Sign in from the home page first to see your history.',empty:'No history yet. Generate your first listing from the home page.',err:'Could not load your history right now, please try again shortly.',noresult:'This one was saved before results were stored, so it is not available here.',titles:'Titles',desc:'Description',bullets:'Key selling points',keywords:'Keywords',ads:'Ad copy',copy:'Copy',copied:'Copied ✓',img:'🖼️ with photo'}};
+let LANG=localStorage.lang||'ar',DATA=null,STATE='loading',CP=[];
+const t=k=>D[LANG][k];
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const arr=v=>Array.isArray(v)?v.map(x=>typeof x==='string'?x:(x&&(x.text||x.title||x.value))||JSON.stringify(x)).filter(Boolean):(v?String(v).split(/\n+/).map(s=>s.replace(/^\s*(?:[-*•]|\d+[.)])\s*/,'').trim()).filter(Boolean):[]);
+function cp(x){CP.push(x);return `<button class="cpb" data-c="${CP.length-1}">${t('copy')}</button>`}
+function result(o,lang){
+ if(typeof o==='string'){try{o=JSON.parse(o)}catch(e){o={raw:o}}}
+ if(!o||typeof o!=='object')return `<div class="it">${t('noresult')}</div>`;
+ const dir=lang==='ar'?'rtl':'ltr';
+ const ti=arr(o.titles||o.title),d=o.description||o.desc,bu=arr(o.bullets),kw=arr(o.keywords),ad=arr(o.ads);
+ const ds=typeof d==='string'?d:arr(d).join('\n');
+ let h='';
+ if(!ti.length&&!ds&&!bu.length&&!kw.length&&!ad.length){return o.raw?`<div class="it" dir="${dir}">${esc(o.raw)}</div>`:`<div class="it">${t('noresult')}</div>`}
+ if(ti.length)h+=`<div class="sec"><h3>🏷️ ${t('titles')}${cp(ti.join('\n'))}</h3>${ti.map(x=>`<div class="it" dir="${dir}">${esc(x)}</div>`).join('')}</div>`;
+ if(ds)h+=`<div class="sec"><h3>📝 ${t('desc')}${cp(ds)}</h3><div class="it" dir="${dir}">${esc(ds)}</div></div>`;
+ if(bu.length)h+=`<div class="sec"><h3>✅ ${t('bullets')}${cp(bu.map(x=>'• '+x).join('\n'))}</h3>${bu.map(x=>`<div class="it" dir="${dir}">${esc(x)}</div>`).join('')}</div>`;
+ if(kw.length)h+=`<div class="sec"><h3>🔎 ${t('keywords')}${cp(kw.join(', '))}</h3><div class="chips" dir="${dir}">${kw.map(x=>`<span class="chip">${esc(x)}</span>`).join('')}</div></div>`;
+ if(ad.length)h+=`<div class="sec"><h3>📣 ${t('ads')}${cp(ad.join('\n\n'))}</h3>${ad.map(x=>`<div class="it" dir="${dir}">${esc(x)}</div>`).join('')}</div>`;
+ return h}
+function render(){
+ document.documentElement.lang=LANG;document.documentElement.dir=LANG==='ar'?'rtl':'ltr';
+ $('back').textContent=t('back');$('ttl').textContent=t('ttl');$('sub').textContent=t('sub');$('lang_btn').textContent=t('btn');
+ document.title=t('ttl');CP=[];
+ const L=$('list');
+ if(STATE!=='ok'){L.innerHTML=`<div class="msg">${esc(t(STATE==='loading'?'loading':STATE==='login'?'login':'err'))}</div>`;return}
+ if(!DATA.length){L.innerHTML=`<div class="msg">${esc(t('empty'))}</div>`;return}
+ L.innerHTML=DATA.map(s=>`<details class="h"><summary><div class="n">${esc(s.name)}</div>${s.details?`<div class="d">${esc(String(s.details).slice(0,160))}${String(s.details).length>160?'…':''}</div>`:''}<div class="m">${new Date(s.created_at).toLocaleString(LANG==='ar'?'ar-EG':'en-GB')}${s.has_image?' · '+t('img'):''}</div></summary>${s.result?result(s.result,s.out_lang==='en'?'en':(s.out_lang==='ar'||!s.out_lang?'ar':'en')):`<div class="it">${t('noresult')}</div>`}</details>`).join('')}
+function setTheme(m){document.documentElement.dataset.theme=m;localStorage.theme=m;$('theme_btn').textContent=m==='dark'?'☀️':'🌙'}
+$('theme_btn').onclick=()=>setTheme(document.documentElement.dataset.theme==='dark'?'light':'dark');
+setTheme(document.documentElement.dataset.theme==='dark'?'dark':'light');
+$('lang_btn').onclick=()=>{LANG=LANG==='ar'?'en':'ar';localStorage.lang=LANG;const o=[...document.querySelectorAll('details.h')].map(d=>d.open);render();document.querySelectorAll('details.h').forEach((d,i)=>d.open=!!o[i])};
+document.addEventListener('click',e=>{const b=e.target.closest('.cpb');if(!b)return;navigator.clipboard.writeText(CP[b.dataset.c]).then(()=>{const o=b.textContent;b.textContent=t('copied');b.classList.add('ok');setTimeout(()=>{b.textContent=o;b.classList.remove('ok')},1500)})});
+(async()=>{render();
+ try{const C=await (await fetch('/api/config')).json();const sb=supabase.createClient(C.supabaseUrl,C.supabaseAnon);
+ const {data}=await sb.auth.getSession();if(!data.session){STATE='login';return render()}
+ const r=await fetch('/api/my-searches',{headers:{Authorization:'Bearer '+data.session.access_token}});
+ if(r.status===401){STATE='login';return render()}
+ if(!r.ok)throw 0;DATA=(await r.json()).searches||[];STATE='ok'}catch(e){STATE='err'}
+ render()})();
+</script></main></body></html>
