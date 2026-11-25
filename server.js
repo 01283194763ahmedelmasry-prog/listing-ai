@@ -78,6 +78,11 @@ Return ONLY a JSON object (no markdown fence) with keys: titles (3 SEO titles), 
 
 http.createServer(async (req, res) => {
   try {
+    if (req.url === '/api/visit' && req.method === 'POST') {
+      const r = await sb('/rest/v1/rpc/increment_visit', { method: 'POST', body: '{}' });
+      if (!r.ok) return send(res, 503, { error: 'counter_unavailable' });
+      return send(res, 200, { visits: await r.json() });
+    }
     if (req.url === '/api/me') { const p = await user(req); return p ? send(res, 200, meInfo(p)) : send(res, 401, { error: 'login_required' }); }
     if (req.url === '/api/generate' && req.method === 'POST') {
       const p = await user(req);
@@ -127,4 +132,3 @@ http.createServer(async (req, res) => {
     res.writeHead(404); res.end('not found');
   } catch (e) { if (!res.headersSent) send(res, e.code === 400 || e.code === 413 ? e.code : 500, { error: String(e.message) }); }
 }).listen(PORT, () => console.log('http://localhost:' + PORT));
-
