@@ -92,10 +92,10 @@ http.createServer(async (req, res) => {
       if (!inp.name) return send(res, 400, { error: 'name_required' });
       if (inp.image && (typeof inp.image.data !== 'string' || !/^image\//.test(String(inp.image.mime)))) delete inp.image;
       // Record what customers search for (owner reviews these in the admin panel). Never block or fail the request on this.
-      sb('/rest/v1/searches', { method: 'POST', body: JSON.stringify({ user_id: p.id, email: p.email, name: inp.name, details: inp.details, out_lang: String(inp.outLang || inp.lang || '').slice(0, 10), has_image: !!inp.image }) }).catch(() => {});
+      const rowId = sb('/rest/v1/searches', { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify({ user_id: p.id, email: p.email, name: inp.name, details: inp.details, out_lang: String(inp.outLang || inp.lang || '').slice(0, 10), has_image: !!inp.image }) }).then((r) => r.json()).then((a) => (a && a[0] ? a[0].id : null)).catch(() => null);
       const left = await (await sb('/rest/v1/rpc/consume_try', { method: 'POST', body: JSON.stringify({ uid: p.id, free_limit: FREE }) })).json();
       if (left < 0) return send(res, 402, { error: 'free_tries_over' });
-      try { const out = await generate(inp); return send(res, 200, { result: out, left: left === 9999 ? null : left }); }
+      try { const out = await generate(inp); rowId.then((id) => id && sb('/rest/v1/searches?id=eq.' + id, { method: 'PATCH', body: JSON.stringify({ result: out }) })).catch(() => {}); return send(res, 200, { result: out, left: left === 9999 ? null : left }); }
       catch (e) { await sb('/rest/v1/rpc/refund_try', { method: 'POST', body: JSON.stringify({ uid: p.id }) }); throw e; }
     }
     // Which Gemini models this key can actually use (names only, no secrets).
@@ -128,7 +128,15 @@ http.createServer(async (req, res) => {
       await sb(`/rest/v1/profiles?id=eq.${p.id}`, { method: 'PATCH', body: JSON.stringify({ plan: b.plan, plan_until: until }) });
       return send(res, 200, { ok: true, until });
     }
-    // Owner-only: recent customer searches for the admin panel. POST /api/admin/searches {token, limit?}
+    // Customer: own past generations ("بحوثي السابقة"). GET /api/my-searches, needs the customer's login token.
+ if (req.url === '/api/my-searches' && req.method === 'GET') {
+ const p = await user(req);
+ if (!p) return send(res, 401, { error: 'login_required' });
+ const r = await sb('/rest/v1/searches?select=id,created_at,name,details,out_lang,has_image,result&user_id=eq.' + p.id + '&order=created_at.desc&limit=100');
+ if (!r.ok) return send(res, 502, { error: 'history_unavailable' });
+ return send(res, 200, { searches: await r.json() });
+ }
+ // Owner-only: recent customer searches for the admin panel. POST /api/admin/searches {token, limit?}
     if (req.url === '/api/admin/searches' && req.method === 'POST') {
       const b = await body(req);
       if (!ADMIN || b.token !== ADMIN) return send(res, 403, { error: 'forbidden' });
