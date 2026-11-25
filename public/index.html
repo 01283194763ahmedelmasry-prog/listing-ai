@@ -122,7 +122,9 @@ function renderResult(res,oLang){
 document.addEventListener('click',e=>{const b=e.target.closest('.cp');if(!b||b.dataset.c==null)return;
  navigator.clipboard.writeText(CP[b.dataset.c]).then(()=>{const o=b.textContent;b.textContent=t('copied');b.classList.add('ok');setTimeout(()=>{b.textContent=o;b.classList.remove('ok')},1500)})});
 $('go').onclick=async()=>{if($('go').disabled)return;$('go').disabled=true;try{let image;const f=$('img').files[0];
- if(f){const d=await new Promise(r=>{const x=new FileReader();x.onload=()=>r(x.result.split(',')[1]);x.readAsDataURL(f)});image={mime:f.type,data:d}}
+ if(f){image=await new Promise(res=>{const x=new FileReader();x.onload=()=>{const raw=x.result;const im=new Image();
+  im.onload=()=>{try{const k=Math.min(1,1024/Math.max(im.width,im.height));const c=document.createElement('canvas');c.width=Math.round(im.width*k);c.height=Math.round(im.height*k);const g=c.getContext('2d');g.fillStyle='#fff';g.fillRect(0,0,c.width,c.height);g.drawImage(im,0,0,c.width,c.height);res({mime:'image/jpeg',data:c.toDataURL('image/jpeg',0.85).split(',')[1]})}catch(e){res({mime:f.type,data:raw.split(',')[1]})}};
+  im.onerror=()=>res({mime:f.type,data:raw.split(',')[1]});im.src=raw};x.readAsDataURL(f)})}
  $('out').innerHTML=`<div class="msg">${esc(t('wait'))}</div>`;
  const oL=$('outlang').value;
  let r,j;try{r=await api('/api/generate',{method:'POST',body:JSON.stringify({name:$('name').value,details:$('details').value,lang:LANG,outLang:oL,image})});j=await r.json()}catch(e){j={error:'network'}}
