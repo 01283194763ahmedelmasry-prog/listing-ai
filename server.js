@@ -40,12 +40,35 @@ process.on('uncaughtException', (e) => console.error('uncaughtException', e));
 process.on('unhandledRejection', (e) => console.error('unhandledRejection', e));
 const send = (res, code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(obj)); };
 
+// One vision call per generation (max 2 attempts: second goes to the next model in the chain). Returns '' on failure so the flow continues.
+async function analyzeImage(image) {
+  const ask = `Look at this product photo as an e-commerce expert. Reply with ONLY a JSON object (no markdown) with keys: product_type (what the product is, e.g. smartphone, headphones), name (brand and model if visible, including any printed text on the product or box, e.g. "Max 6 inch"; empty string if not visible), visible_text (array of text strings you can read on the image), specs (array of specs visible or evident from the image: colors, screen shape, design, ports, accessories included), notes (one short line). Only report what is actually visible. Do not guess brand, model or numeric specs that are not shown.`;
+  for (const m of MODELS.slice(0, 2)) {
+    try {
+      const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${m}:generateContent`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': KEY },
+        body: JSON.stringify({ contents: [{ parts: [{ text: ask }, { inline_data: { mime_type: image.mime, data: image.data } }] }], generationConfig: { responseMimeType: 'application/json' } }),
+      });
+      if (!r.ok) { console.log('vision', m, r.status, (await r.text()).slice(0, 200)); continue; }
+      const j = await r.json();
+      const t = j.candidates[0].content.parts.map((p) => p.text || '').join('');
+      const mm = /\{[\s\S]*\}/.exec(t); const a = JSON.parse(mm ? mm[0] : t);
+      const L = (v) => (Array.isArray(v) ? v.join(', ') : String(v || '')).slice(0, 600);
+      return [a.product_type && 'Product type: ' + L(a.product_type), a.name && 'Name/model seen: ' + L(a.name), a.visible_text && L(a.visible_text) && 'Text visible on image: ' + L(a.visible_text), a.specs && L(a.specs) && 'Visible specs: ' + L(a.specs), a.notes && 'Notes: ' + L(a.notes)].filter(Boolean).join('\n');
+    } catch (e) { console.log('vision error', m, String(e.message).slice(0, 200)); }
+  }
+  return '';
+}
+
 async function generate({ name, details, lang, outLang, image }) {
+  let analysis = '';
+  if (image) analysis = await analyzeImage(image);
+  if (analysis && !name) name = (/^Name\/model seen: (.+)$/m.exec(analysis) || [])[1] || (/^Product type: (.+)$/m.exec(analysis) || [])[1] || 'Product in the attached photo';
   const L = OUT_LANGS[outLang] || (lang === 'en' ? 'English' : 'Arabic');
   const prompt = `You are an expert e-commerce SEO copywriter and market researcher.
 Product: ${name}
-Seller details: ${details}
-${GROUND ? 'STEP 1: Use Google Search to research this product: real specs and facts, how top-ranking listings and competitors title and describe it, and what keywords buyers search for in the target market (Egypt / Arabic-speaking buyers when writing Arabic).\nSTEP 2: ' : ''}Write the listing in ${L} using SEO best practice for the market of that language and the seller details. Never invent specs that were not given; if unsure, leave them out.
+Seller details: ${details || '(none)'}
+${analysis ? `Photo analysis (from the uploaded image, trustworthy for what is visible):\n${analysis}\nUse the photo analysis as the product name and details when the seller's name/details are empty or thin, and merge it with the seller's details when both exist (seller text wins on conflicts). The listing must name the actual product type, brand/model and visible specs/text from the image. Do not write generic filler.\n` : ''}${GROUND ? 'STEP 1: Use Google Search to research this product: real specs and facts, how top-ranking listings and competitors title and describe it, and what keywords buyers search for in the target market (Egypt / Arabic-speaking buyers when writing Arabic).\nSTEP 2: ' : ''}Write the listing in ${L} using SEO best practice for the market of that language and the seller details. Never invent specs that were not given; if unsure, leave them out.
 Return ONLY a JSON object (no markdown fence) with keys: titles (3 SEO titles), description, bullets (5), keywords (10, ordered by search relevance), ads (2 short ready-to-post ads), research_notes (3 short lines on the SEO approach used).`;
   const parts = [{ text: prompt }];
   if (image) parts.push({ inline_data: { mime_type: image.mime, data: image.data } });
@@ -89,10 +112,10 @@ http.createServer(async (req, res) => {
       if (!p) return send(res, 401, { error: 'login_required' });
       const inp = await body(req); // parse and validate BEFORE using up a free try
       inp.name = String(inp.name || '').trim().slice(0, 300); inp.details = String(inp.details || '').trim().slice(0, 3000);
-      if (!inp.name) return send(res, 400, { error: 'name_required' });
       if (inp.image && (typeof inp.image.data !== 'string' || !/^image\//.test(String(inp.image.mime)))) delete inp.image;
+      if (!inp.name && !inp.image) return send(res, 400, { error: 'name_required' });
       // Record what customers search for (owner reviews these in the admin panel). Never block or fail the request on this.
-      const rowId = sb('/rest/v1/searches', { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify({ user_id: p.id, email: p.email, name: inp.name, details: inp.details, out_lang: String(inp.outLang || inp.lang || '').slice(0, 10), has_image: !!inp.image }) }).then((r) => r.json()).then((a) => (a && a[0] ? a[0].id : null)).catch(() => null);
+      const rowId = sb('/rest/v1/searches', { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify({ user_id: p.id, email: p.email, name: inp.name || '(from image)', details: inp.details, out_lang: String(inp.outLang || inp.lang || '').slice(0, 10), has_image: !!inp.image }) }).then((r) => r.json()).then((a) => (a && a[0] ? a[0].id : null)).catch(() => null);
       const left = await (await sb('/rest/v1/rpc/consume_try', { method: 'POST', body: JSON.stringify({ uid: p.id, free_limit: FREE }) })).json();
       if (left < 0) return send(res, 402, { error: 'free_tries_over' });
       try { const out = await generate(inp); rowId.then((id) => id && sb('/rest/v1/searches?id=eq.' + id, { method: 'PATCH', body: JSON.stringify({ result: out }) })).catch(() => {}); return send(res, 200, { result: out, left: left === 9999 ? null : left }); }
