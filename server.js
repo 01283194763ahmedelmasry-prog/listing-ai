@@ -120,6 +120,16 @@ http.createServer(async (req, res) => {
       if (!r.ok) return send(res, 503, { error: 'counter_unavailable' });
       return send(res, 200, { visits: await r.json() });
     }
+    if (req.url === '/api/registration-count' && req.method === 'GET') {
+      if (!SB || !SBK) return send(res, 500, { error: 'server_error' });
+      try {
+        const r = await sb('/rest/v1/profiles?select=id', { method: 'HEAD', headers: { Prefer: 'count=exact' } });
+        const m = /\/(\d+)\s*$/.exec(r.headers.get('content-range') || '');
+        if (!r.ok || !m) return send(res, 500, { error: 'server_error' });
+        res.setHeader('Cache-Control', 'public, max-age=30');
+        return send(res, 200, { count: Number(m[1]) });
+      } catch { return send(res, 500, { error: 'server_error' }); }
+    }
     if (req.url === '/api/me') { const p = await user(req); return p ? send(res, 200, meInfo(p)) : send(res, 401, { error: 'login_required' }); }
     if (req.url === '/api/generate' && req.method === 'POST') {
       const p = await user(req);
