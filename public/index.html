@@ -69,7 +69,8 @@ let LANG=localStorage.lang||'ar';
 function t(k,...a){const v=D[LANG][k];return typeof v==='function'?v(...a):v}
 $('img').addEventListener('change',()=>{$('img-name').textContent=$('img').files[0]?.name||t('no_file')});
 let visitTotal=null;function showVisits(){if(visitTotal!==null)$('visit-count').textContent=(LANG==='ar'?'عدد المسجلين: ':'Registered users: ')+visitTotal}
-fetch('/api/registration-count').then(r=>r.ok?r.json():null).then(d=>{if(d&&Number.isFinite(Number(d.count))){visitTotal=Number(d.count);showVisits()}else throw 0}).catch(()=>{$('visit-count').textContent=LANG==='ar'?'تعذّر تحميل عدد المسجلين':'Registered count unavailable'});
+function loadVisits(bust){fetch('/api/registration-count',bust?{cache:'reload'}:{}).then(r=>r.ok?r.json():null).then(d=>{if(d&&Number.isFinite(Number(d.count))){visitTotal=Number(d.count);showVisits()}else throw 0}).catch(()=>{$('visit-count').textContent=LANG==='ar'?'تعذّر تحميل عدد المسجلين':'Registered count unavailable'})}
+loadVisits();
 function setTheme(m){document.documentElement.dataset.theme=m;localStorage.theme=m;$('theme_btn').textContent=m==='dark'?'☀️':'🌙'}
 $('theme_btn').onclick=()=>setTheme(document.documentElement.dataset.theme==='dark'?'light':'dark');
 setTheme(document.documentElement.dataset.theme==='dark'?'dark':'light');
@@ -88,6 +89,7 @@ async function refresh(){
  $('login').classList.toggle('hide',on);$('app').classList.toggle('hide',!on);$('out_btn').classList.toggle('hide',!on);$('hist_btn').classList.toggle('hide',!on);
  if(!on){$('status').classList.add('hide');return}
  const r=await api('/api/me');if(!r.ok)return;ME=await r.json();
+ loadVisits(1);
  $('status').classList.remove('hide');
  $('status').textContent=ME.active?t('active',ME.plan==='yearly'?t('yearly'):t('monthly'),ME.daysLeft):t('left',ME.left);
  wa();}
