@@ -28,7 +28,7 @@ async function user(req) {
   if (!r.ok) return null;
   const au = await r.json();
   let p = (await (await sb(`/rest/v1/profiles?id=eq.${au.id}&select=*`)).json())[0];
-  if (!p) { await sb('/rest/v1/profiles', { method: 'POST', body: JSON.stringify({ id: au.id, email: au.email }) }); p = { id: au.id, email: au.email, free_used: 0, plan: null, plan_until: null }; }
+  if (!p) { await sb('/rest/v1/profiles', { method: 'POST', headers: { Prefer: 'resolution=merge-duplicates' }, body: JSON.stringify({ id: au.id, email: au.email }) }); p = { id: au.id, email: au.email, free_used: 0, plan: null, plan_until: null }; }
   p.active = !!(p.plan && p.plan_until && new Date(p.plan_until) > new Date());
   return p;
 }
